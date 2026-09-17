@@ -5,7 +5,7 @@ export interface ITodo extends Document {
   description?: string;
   assignee?: string;
   dueDate?: Date;
-  status: "pending" | "in_progress" | "completed";
+  status: "in_progress" | "blocked" | "completed";
   createdAt: Date;
   updatedAt: Date;
 }
@@ -34,8 +34,8 @@ const todoSchema = new Schema<ITodo>(
 
     status: {
       type: String,
-      enum: ["pending", "in_progress", "completed"],
-      default: "pending",
+      enum: ["in_progress", "blocked", "completed"],
+      default: "in_progress",
     },
   },
   {
