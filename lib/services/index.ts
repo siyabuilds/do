@@ -40,3 +40,9 @@ export async function saveTodo(input: CreateTodoInput) {
 
   return Todo.create(input);
 }
+
+export async function deleteTodo(id: string) {
+  await connectToDatabase();
+
+  return Todo.findByIdAndDelete(id);
+}
