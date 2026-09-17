@@ -34,3 +34,9 @@ export async function updateTodo(id: string, input: UpdateTodoInput) {
     runValidators: true,
   });
 }
+
+export async function saveTodo(input: CreateTodoInput) {
+  await connectToDatabase();
+
+  return Todo.create(input);
+}
