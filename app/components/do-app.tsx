@@ -35,6 +35,7 @@ type SavedTodo = Omit<Todo, "_id" | "status"> & {
   _id: string;
   status: Status;
 };
+type TaskFilter = "all" | "pending" | Status;
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "quiet";
 };
@@ -280,6 +281,42 @@ export function TodoList({
   );
 }
 
+export function TaskStatusFilter({
+  value,
+  onChange,
+}: {
+  value: TaskFilter;
+  onChange: (value: TaskFilter) => void;
+}) {
+  const filters: Array<{ label: string; value: TaskFilter }> = [
+    { label: "All", value: "all" },
+    { label: "Pending", value: "pending" },
+    { label: "In Progress", value: "in_progress" },
+    { label: "Blocked", value: "blocked" },
+    { label: "Done", value: "completed" },
+  ];
+
+  return (
+    <div
+      className="task-status-filter"
+      role="group"
+      aria-label="Filter tasks by status"
+    >
+      {filters.map((filter) => (
+        <button
+          key={filter.value}
+          className={value === filter.value ? "is-active" : ""}
+          type="button"
+          aria-pressed={value === filter.value}
+          onClick={() => onChange(filter.value)}
+        >
+          {filter.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function MeetingNotesInput({
   value,
   onChange,
@@ -470,11 +507,15 @@ export function PageHeader() {
     </div>
   );
 }
-export function EmptyState() {
+export function EmptyState({ filtered = false }: { filtered?: boolean }) {
   return (
     <div className="empty-state">
-      <h3>No saved tasks</h3>
-      <p>Generate tasks from meeting notes to start your list.</p>
+      <h3>{filtered ? "No matching tasks" : "No saved tasks"}</h3>
+      <p>
+        {filtered
+          ? "Try a different status filter."
+          : "Generate tasks from meeting notes to start your list."}
+      </p>
     </div>
   );
 }
@@ -488,7 +529,11 @@ export function DoApp() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState("");
   const [updatingId, setUpdatingId] = useState("");
+  const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
   const [error, setError] = useState("");
+  const filteredTodos = todos.filter(
+    (todo) => taskFilter === "all" || todo.status === taskFilter,
+  );
   useEffect(() => {
     fetch("/api/todos")
       .then(async (response) => {
@@ -678,12 +723,15 @@ export function DoApp() {
             <p className="eyebrow">Saved</p>
             <h2>Your tasks</h2>
           </div>
-          <span className="count">{todos.length}</span>
+          <div className="saved-tasks__controls">
+            <TaskStatusFilter value={taskFilter} onChange={setTaskFilter} />
+            <span className="count">{filteredTodos.length}</span>
+          </div>
         </div>
-        {todos.length ? (
+        {filteredTodos.length ? (
           <div className="saved-tasks">
             <TodoList
-              todos={todos}
+              todos={filteredTodos}
               onDelete={deleteSavedTodo}
               deletingId={deletingId}
               onStatusChange={updateSavedTodoStatus}
@@ -691,7 +739,7 @@ export function DoApp() {
             />
           </div>
         ) : (
-          <EmptyState />
+          <EmptyState filtered={todos.length > 0} />
         )}
       </section>
     </AppShell>
