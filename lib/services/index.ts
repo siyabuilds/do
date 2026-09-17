@@ -8,8 +8,8 @@ type CreateTodoInput = {
   dueDate?: Date;
 };
 
-type UpdateTodoInput = Partial<CreateTodoInput> & {
-  status?: ITodo["status"];
+type UpdateTodoInput = {
+  status: ITodo["status"];
 };
 
 export async function createTodo(input: CreateTodoInput) {

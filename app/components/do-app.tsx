@@ -20,7 +20,7 @@ import {
   UserRound,
 } from "lucide-react";
 
-type Status = "pending" | "in_progress" | "completed";
+type Status = "in_progress" | "blocked" | "completed";
 type Todo = {
   _id?: string;
   id?: string;
@@ -30,6 +30,10 @@ type Todo = {
   assignee?: string;
   dueDate?: string | Date;
   status?: Status;
+};
+type SavedTodo = Omit<Todo, "_id" | "status"> & {
+  _id: string;
+  status: Status;
 };
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "quiet";
@@ -102,15 +106,56 @@ export function Separator() {
   return <div className="separator" role="separator" />;
 }
 
-export function TodoStatus({ status = "pending" }: { status?: Status }) {
+export function TodoStatus({
+  status = "in_progress",
+  onChange,
+  disabled = false,
+}: {
+  status?: Status;
+  onChange?: (status: Status) => void;
+  disabled?: boolean;
+}) {
+  const labels: Record<Status, string> = {
+    in_progress: "In Progress",
+    blocked: "Blocked",
+    completed: "Done",
+  };
+
+  if (!onChange) {
+    return (
+      <span className={`badge todo-status todo-status--${status}`}>
+        {labels[status]}
+      </span>
+    );
+  }
+
   return (
-    <Badge>
-      {
-        { pending: "Open", in_progress: "In progress", completed: "Complete" }[
-          status
-        ]
-      }
-    </Badge>
+    <details className="todo-status-menu">
+      <summary aria-label={`Update status, currently ${labels[status]}`}>
+        <span>{disabled ? "Updating" : "Update"}</span>
+        <span className={`todo-status todo-status--${status}`}>
+          {labels[status]}
+        </span>
+      </summary>
+      <div className="todo-status-menu__options" role="menu">
+        {(Object.keys(labels) as Status[]).map((option) => (
+          <button
+            key={option}
+            className={`todo-status-menu__option todo-status--${option}`}
+            type="button"
+            role="menuitemradio"
+            aria-checked={status === option}
+            disabled={disabled}
+            onClick={(event) => {
+              event.currentTarget.closest("details")?.removeAttribute("open");
+              onChange(option);
+            }}
+          >
+            {labels[option]}
+          </button>
+        ))}
+      </div>
+    </details>
   );
 }
 export function TodoAssignee({ assignee }: { assignee?: string }) {
@@ -144,24 +189,37 @@ export function TodoItem({
   todo,
   selected = false,
   onSelectedChange,
+  onStatusChange,
   action,
+  disabled = false,
 }: {
   todo: Todo;
   selected?: boolean;
   onSelectedChange?: (checked: boolean) => void;
+  onStatusChange?: (status: Status) => void;
   action?: ReactNode;
+  disabled?: boolean;
 }) {
   return (
-    <article className="todo-item">
-      <Checkbox
-        aria-label={`Select ${todo.title}`}
-        checked={selected}
-        onChange={(event) => onSelectedChange?.(event.target.checked)}
-      />
+    <article
+      className={`todo-item ${onSelectedChange ? "todo-item--selectable" : ""} ${todo.status === "completed" ? "todo-item--completed" : ""}`}
+    >
+      {onSelectedChange && (
+        <Checkbox
+          aria-label={`Select ${todo.title}`}
+          checked={selected}
+          onChange={(event) => onSelectedChange(event.target.checked)}
+          disabled={disabled}
+        />
+      )}
       <div className="todo-item__body">
         <div className="todo-item__heading">
           <h3>{todo.title}</h3>
-          <TodoStatus status={todo.status} />
+          <TodoStatus
+            status={todo.status}
+            onChange={onStatusChange}
+            disabled={disabled}
+          />
         </div>
         <div className="todo-item__metadata">
           <TodoAssignee assignee={todo.assignee} />
@@ -177,28 +235,39 @@ export function TodoList({
   todos,
   onDelete,
   deletingId,
+  onStatusChange,
+  updatingId,
 }: {
-  todos: Todo[];
+  todos: SavedTodo[];
   onDelete?: (id: string) => void;
   deletingId?: string;
+  onStatusChange?: (id: string, status: Status) => void;
+  updatingId?: string;
 }) {
   return (
     <div className="todo-list">
-      {todos.map((todo, index) => {
-        const id = todo._id ?? todo.id ?? `${todo.title}-${index}`;
+      {todos.map((todo) => {
+        const id = todo._id;
         return (
           <TodoItem
             key={id}
             todo={todo}
+            disabled={updatingId === todo._id}
+            onSelectedChange={undefined}
+            onStatusChange={
+              onStatusChange
+                ? (status) => onStatusChange(todo._id, status)
+                : undefined
+            }
             action={
-              onDelete && todo._id ? (
+              onDelete ? (
                 <IconButton
                   className="todo-delete"
                   type="button"
                   aria-label={`Delete ${todo.title}`}
                   title="Delete task"
                   disabled={deletingId === todo._id}
-                  onClick={() => onDelete(todo._id!)}
+                  onClick={() => onDelete(todo._id)}
                 >
                   <Trash2 size={15} />
                 </IconButton>
@@ -412,12 +481,13 @@ export function EmptyState() {
 
 export function DoApp() {
   const [notes, setNotes] = useState("");
-  const [todos, setTodos] = useState<Todo[]>([]);
+  const [todos, setTodos] = useState<SavedTodo[]>([]);
   const [proposed, setProposed] = useState<Todo[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState("");
+  const [updatingId, setUpdatingId] = useState("");
   const [error, setError] = useState("");
   useEffect(() => {
     fetch("/api/todos")
@@ -426,7 +496,7 @@ export function DoApp() {
         if (!response.ok) throw new Error(data.error ?? "Unable to load tasks");
         return data;
       })
-      .then((data) => setTodos(data.todos))
+      .then((data) => setTodos(data.todos as SavedTodo[]))
       .catch((reason) =>
         setError(
           reason instanceof Error ? reason.message : "Unable to load tasks",
@@ -520,6 +590,33 @@ export function DoApp() {
       setDeletingId("");
     }
   }
+  async function updateSavedTodoStatus(id: string, status: Status) {
+    setUpdatingId(id);
+    setError("");
+    try {
+      const response = await fetch(`/api/todos/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(data.error ?? "Unable to update task status");
+      setTodos((items) =>
+        items.map((todo) =>
+          todo._id === id ? (data.todo as SavedTodo) : todo,
+        ),
+      );
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to update task status",
+      );
+    } finally {
+      setUpdatingId("");
+    }
+  }
   return (
     <AppShell>
       <PageHeader />
@@ -589,6 +686,8 @@ export function DoApp() {
               todos={todos}
               onDelete={deleteSavedTodo}
               deletingId={deletingId}
+              onStatusChange={updateSavedTodoStatus}
+              updatingId={updatingId}
             />
           </div>
         ) : (
