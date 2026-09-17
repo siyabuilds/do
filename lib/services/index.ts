@@ -1,0 +1,36 @@
+import { connectToDatabase } from "../connection";
+import Todo, { ITodo } from "../models/ToDo";
+
+type CreateTodoInput = {
+  title: string;
+  description?: string;
+  assignee?: string;
+  dueDate?: Date;
+};
+
+type UpdateTodoInput = Partial<CreateTodoInput> & {
+  status?: ITodo["status"];
+};
+
+export async function createTodo(input: CreateTodoInput) {
+  await connectToDatabase();
+
+  const todo = await Todo.create(input);
+
+  return todo;
+}
+
+export async function getAllTodos() {
+  await connectToDatabase();
+
+  return Todo.find().sort({ createdAt: -1 });
+}
+
+export async function updateTodo(id: string, input: UpdateTodoInput) {
+  await connectToDatabase();
+
+  return Todo.findByIdAndUpdate(id, input, {
+    new: true,
+    runValidators: true,
+  });
+}
