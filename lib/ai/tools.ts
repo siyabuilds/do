@@ -3,7 +3,7 @@ export const createTodoTool = {
   strict: false as const,
   name: "createTodo",
   description:
-    "Extract an actionable task from the user's text and return it as a proposed todo. Do not save it to the database.",
+    "Create a saved task only when the user explicitly asks to create, add, or save it.",
   parameters: {
     type: "object",
     properties: {
@@ -23,10 +23,69 @@ export const createTodoTool = {
       dueDate: {
         type: "string",
         description:
-          "The deadline for the task in ISO 8601 format, if explicitly stated or unambiguously inferable.",
+          "The deadline for the task in YYYY-MM-DD format, if explicitly stated.",
       },
     },
     required: ["title"],
+  },
+};
+
+export const updateTodoTool = {
+  type: "function" as const,
+  strict: false as const,
+  name: "updateTodo",
+  description:
+    "Update one saved task only after retrieving task data and identifying its exact MongoDB _id. Use only when the user explicitly asks to modify that task.",
+  parameters: {
+    type: "object",
+    properties: {
+      id: {
+        type: "string",
+        description: "The exact _id of the retrieved task to update.",
+      },
+      title: { type: "string", description: "Replacement task title." },
+      description: {
+        type: "string",
+        description: "Replacement task description.",
+      },
+      assignee: {
+        type: "string",
+        description: "Replacement task assignee.",
+      },
+      dueDate: {
+        type: "string",
+        description: "Replacement due date in YYYY-MM-DD format.",
+      },
+      status: {
+        type: "string",
+        enum: ["in_progress", "blocked", "completed"],
+        description: "Replacement task status.",
+      },
+    },
+    required: ["id"],
+  },
+};
+
+export const deleteTodoTool = {
+  type: "function" as const,
+  strict: false as const,
+  name: "deleteTodo",
+  description:
+    "Permanently delete one retrieved task only after the assistant has named it and the user has explicitly confirmed deletion in a later message.",
+  parameters: {
+    type: "object",
+    properties: {
+      id: {
+        type: "string",
+        description: "The exact _id of the retrieved task to delete.",
+      },
+      confirmed: {
+        type: "boolean",
+        description:
+          "True only after a later user message explicitly confirms deletion of the named task.",
+      },
+    },
+    required: ["id", "confirmed"],
   },
 };
 

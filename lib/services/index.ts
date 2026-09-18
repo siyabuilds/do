@@ -9,7 +9,11 @@ type CreateTodoInput = {
 };
 
 type UpdateTodoInput = {
-  status: ITodo["status"];
+  title?: string;
+  description?: string;
+  assignee?: string;
+  dueDate?: Date;
+  status?: ITodo["status"];
 };
 
 export async function createTodo(input: CreateTodoInput) {
