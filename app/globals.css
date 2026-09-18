@@ -484,6 +484,93 @@ h2 {
   border-left: 2px solid var(--ink);
   background: var(--surface);
 }
+.chat-panel {
+  display: grid;
+  grid-template-rows: auto minmax(280px, 1fr) auto;
+  min-height: calc(100vh - 116px);
+}
+.chat-conversation {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  max-width: 760px;
+  padding: var(--space-5) 0;
+}
+.chat-empty-state {
+  padding: var(--space-6) 0;
+  border-bottom: 1px solid var(--border);
+}
+.chat-empty-state svg {
+  margin-bottom: var(--space-3);
+  color: var(--slate);
+}
+.chat-empty-state h2 {
+  margin-bottom: var(--space-2);
+}
+.chat-empty-state p {
+  max-width: 480px;
+  margin-bottom: var(--space-4);
+  color: var(--slate);
+}
+.chat-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.button--secondary {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 500;
+}
+.button--secondary:hover:not(:disabled) {
+  background: var(--background);
+}
+.chat-message {
+  max-width: 680px;
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.chat-message--user {
+  justify-self: end;
+  width: min(100%, 520px);
+}
+.chat-message__label {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--slate);
+  font-family: var(--font-label), sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.chat-message p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.chat-link,
+.BUILDERSHOULDFINDTHIS {
+  color: var(--ink);
+  text-decoration-color: var(--slate);
+  text-underline-offset: 2px;
+}
+.chat-link:hover,
+.BUILDERSHOULDFINDTHIS:hover {
+  text-decoration-color: var(--ink);
+}
+.chat-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 680px) var(--control-height);
+  align-items: end;
+  gap: var(--space-2);
+  max-width: 728px;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+.chat-composer .textarea {
+  min-height: 72px;
+}
 .spin {
   animation: spin 0.8s linear infinite;
 }
