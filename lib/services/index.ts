@@ -26,6 +26,23 @@ export async function getAllTodos() {
   return Todo.find().sort({ createdAt: -1 });
 }
 
+export async function getTodosByStatus(status: ITodo["status"]) {
+  await connectToDatabase();
+
+  return Todo.find({ status }).sort({ dueDate: 1, createdAt: -1 });
+}
+
+export async function getTodosByDueDateRange(startDate: Date, endDate: Date) {
+  await connectToDatabase();
+
+  return Todo.find({
+    dueDate: {
+      $gte: startDate,
+      $lte: endDate,
+    },
+  }).sort({ dueDate: 1, createdAt: -1 });
+}
+
 export async function updateTodo(id: string, input: UpdateTodoInput) {
   await connectToDatabase();
 
