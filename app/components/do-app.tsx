@@ -8,13 +8,17 @@ import {
   type ReactNode,
   type TextareaHTMLAttributes,
 } from "react";
+import DOMPurify from "dompurify";
 import Link from "next/link";
 import {
+  Bot,
   CalendarDays,
   Check,
   ListTodo,
   LoaderCircle,
+  MessageSquare,
   Search,
+  Send,
   SquarePen,
   Trash2,
   UserRound,
@@ -497,25 +501,49 @@ export function SidebarItem({
   icon,
   children,
   active = false,
+  onClick,
 }: {
   icon: ReactNode;
   children: ReactNode;
   active?: boolean;
+  onClick?: () => void;
 }) {
   return (
-    <button className={`sidebar-item ${active ? "sidebar-item--active" : ""}`}>
+    <button
+      className={`sidebar-item ${active ? "sidebar-item--active" : ""}`}
+      type="button"
+      aria-current={active ? "page" : undefined}
+      onClick={onClick}
+    >
       {icon}
       {children}
     </button>
   );
 }
-export function Sidebar() {
+export function Sidebar({
+  view,
+  onViewChange,
+}: {
+  view: "tasks" | "chat";
+  onViewChange: (view: "tasks" | "chat") => void;
+}) {
   return (
     <aside className="sidebar">
       <p className="eyebrow">Workspace</p>
       <nav aria-label="Workspace navigation">
-        <SidebarItem icon={<ListTodo size={16} />} active>
+        <SidebarItem
+          icon={<ListTodo size={16} />}
+          active={view === "tasks"}
+          onClick={() => onViewChange("tasks")}
+        >
           My tasks
+        </SidebarItem>
+        <SidebarItem
+          icon={<MessageSquare size={16} />}
+          active={view === "chat"}
+          onClick={() => onViewChange("chat")}
+        >
+          Chat
         </SidebarItem>
       </nav>
     </aside>
@@ -536,12 +564,20 @@ export function Header() {
     </header>
   );
 }
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({
+  children,
+  view,
+  onViewChange,
+}: {
+  children: ReactNode;
+  view: "tasks" | "chat";
+  onViewChange: (view: "tasks" | "chat") => void;
+}) {
   return (
     <div className="app-shell">
       <Header />
       <div className="workspace">
-        <Sidebar />
+        <Sidebar view={view} onViewChange={onViewChange} />
         <main className="main">{children}</main>
       </div>
     </div>
@@ -571,6 +607,164 @@ export function EmptyState({ filtered = false }: { filtered?: boolean }) {
   );
 }
 
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+DOMPurify.addHook("uponSanitizeAttribute", (node, data) => {
+  if (
+    (data.attrName === "class" || data.attrName === "href") &&
+    node.nodeName !== "A"
+  ) {
+    data.keepAttr = false;
+  }
+});
+
+function sanitizeAssistantHtml(content: string) {
+  return DOMPurify.sanitize(content, {
+    ALLOWED_TAGS: ["p", "strong", "em", "ul", "ol", "li", "a", "br"],
+    ALLOWED_ATTR: ["href", "class"],
+    ALLOW_DATA_ATTR: false,
+    ALLOW_ARIA_ATTR: false,
+  });
+}
+
+export function TaskChat() {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const suggestedQuestions = [
+    "What needs my attention?",
+    "Which tasks are blocked?",
+    "What is due this week?",
+  ];
+
+  async function send(message = draft) {
+    const content = message.trim();
+    if (!content || sending) return;
+    const nextMessages = [...messages, { role: "user" as const, content }];
+    setMessages(nextMessages);
+    setDraft("");
+    setSending(true);
+    setError("");
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: nextMessages }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Unable to send message");
+      setMessages((items) => [
+        ...items,
+        {
+          role: "assistant",
+          content: data.message || "I could not find an answer.",
+        },
+      ]);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to send message",
+      );
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="chat-panel">
+      <div className="page-header">
+        <div>
+          <p className="eyebrow">Workspace / Chat</p>
+          <h1>Task assistant</h1>
+        </div>
+        <p>Ask about work already saved in your workspace.</p>
+      </div>
+      <section className="chat-conversation" aria-live="polite">
+        {messages.length === 0 ? (
+          <div className="chat-empty-state">
+            <Bot size={20} aria-hidden="true" />
+            <h2>How can I help?</h2>
+            <p>
+              I can review saved tasks, surface deadlines, and flag work that
+              needs attention.
+            </p>
+            <div className="chat-suggestions">
+              {suggestedQuestions.map((question) => (
+                <Button
+                  key={question}
+                  type="button"
+                  variant="secondary"
+                  onClick={() => send(question)}
+                >
+                  {question}
+                </Button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          messages.map((message, index) => (
+            <article
+              className={`chat-message chat-message--${message.role}`}
+              key={`${message.role}-${index}`}
+            >
+              <span className="chat-message__label">
+                {message.role === "assistant" ? "do" : "You"}
+              </span>
+              {message.role === "assistant" ? (
+                <div
+                  className="chat-message__content"
+                  dangerouslySetInnerHTML={{
+                    __html: sanitizeAssistantHtml(message.content),
+                  }}
+                />
+              ) : (
+                <p>{message.content}</p>
+              )}
+            </article>
+          ))
+        )}
+        {sending && (
+          <article className="chat-message chat-message--assistant">
+            <span className="chat-message__label">do</span>
+            <p>Checking your tasks...</p>
+          </article>
+        )}
+      </section>
+      {error && (
+        <p className="error-message" role="alert">
+          {error}
+        </p>
+      )}
+      <form
+        className="chat-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send();
+        }}
+      >
+        <Textarea
+          aria-label="Ask the task assistant"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Ask about your tasks..."
+          disabled={sending}
+        />
+        <IconButton
+          type="submit"
+          aria-label="Send message"
+          title="Send message"
+          disabled={!draft.trim() || sending}
+        >
+          <Send size={16} />
+        </IconButton>
+      </form>
+    </div>
+  );
+}
+
 export function DoApp() {
   const [notes, setNotes] = useState("");
   const [todos, setTodos] = useState<SavedTodo[]>([]);
@@ -581,6 +775,7 @@ export function DoApp() {
   const [deletingId, setDeletingId] = useState("");
   const [updatingId, setUpdatingId] = useState("");
   const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
+  const [view, setView] = useState<"tasks" | "chat">("tasks");
   const [error, setError] = useState("");
   const filteredTodos = todos.filter(
     (todo) => taskFilter === "all" || todo.status === taskFilter,
@@ -714,85 +909,93 @@ export function DoApp() {
     }
   }
   return (
-    <AppShell>
-      <PageHeader />
-      <section className="section">
-        <div className="section__header">
-          <div>
-            <p className="eyebrow">Draft</p>
-            <h2>New tasks</h2>
-          </div>
-          <GenerateButton
-            generating={generating}
-            disabled={!notes.trim() || generating}
-            onClick={generate}
-          />
-        </div>
-        <MeetingNotesInput
-          value={notes}
-          onChange={setNotes}
-          disabled={generating}
-        />
-      </section>
-      {error && (
-        <p className="error-message" role="alert">
-          {error}
-        </p>
-      )}
-      {proposed.length > 0 && (
-        <section className="section">
-          <div className="section__header">
-            <div>
-              <p className="eyebrow">Review</p>
-              <h2>Proposed tasks</h2>
+    <AppShell view={view} onViewChange={setView}>
+      {view === "chat" ? (
+        <TaskChat />
+      ) : (
+        <>
+          <PageHeader />
+          <section className="section">
+            <div className="section__header">
+              <div>
+                <p className="eyebrow">Draft</p>
+                <h2>New tasks</h2>
+              </div>
+              <GenerateButton
+                generating={generating}
+                disabled={!notes.trim() || generating}
+                onClick={generate}
+              />
             </div>
-            <span className="count">{selected.length} selected</span>
-          </div>
-          <ProposedTodoList
-            todos={proposed}
-            selectedIds={selected}
-            onSelect={(id, checked) =>
-              setSelected((items) =>
-                checked ? [...items, id] : items.filter((item) => item !== id),
-              )
-            }
-            onRemove={remove}
-          />
-          <Separator />
-          <div className="section__actions">
-            <SaveSelectedButton
-              count={selected.length}
-              saving={saving}
-              onClick={save}
+            <MeetingNotesInput
+              value={notes}
+              onChange={setNotes}
+              disabled={generating}
             />
-          </div>
-        </section>
+          </section>
+          {error && (
+            <p className="error-message" role="alert">
+              {error}
+            </p>
+          )}
+          {proposed.length > 0 && (
+            <section className="section">
+              <div className="section__header">
+                <div>
+                  <p className="eyebrow">Review</p>
+                  <h2>Proposed tasks</h2>
+                </div>
+                <span className="count">{selected.length} selected</span>
+              </div>
+              <ProposedTodoList
+                todos={proposed}
+                selectedIds={selected}
+                onSelect={(id, checked) =>
+                  setSelected((items) =>
+                    checked
+                      ? [...items, id]
+                      : items.filter((item) => item !== id),
+                  )
+                }
+                onRemove={remove}
+              />
+              <Separator />
+              <div className="section__actions">
+                <SaveSelectedButton
+                  count={selected.length}
+                  saving={saving}
+                  onClick={save}
+                />
+              </div>
+            </section>
+          )}
+          <section className="section">
+            <div className="section__header">
+              <div>
+                <p className="eyebrow">Saved</p>
+                <h2>Your tasks</h2>
+              </div>
+              <div className="saved-tasks__controls">
+                <TaskStatusFilter value={taskFilter} onChange={setTaskFilter} />
+                <span className="count">{filteredTodos.length}</span>
+              </div>
+            </div>
+            {filteredTodos.length ? (
+              <div className="saved-tasks">
+                <TodoList
+                  todos={filteredTodos}
+                  onDelete={deleteSavedTodo}
+                  deletingId={deletingId}
+                  onStatusChange={updateSavedTodoStatus}
+                  updatingId={updatingId}
+                />
+              </div>
+            ) : (
+              <EmptyState filtered={todos.length > 0} />
+            )}
+          </section>
+        </>
       )}
-      <section className="section">
-        <div className="section__header">
-          <div>
-            <p className="eyebrow">Saved</p>
-            <h2>Your tasks</h2>
-          </div>
-          <div className="saved-tasks__controls">
-            <TaskStatusFilter value={taskFilter} onChange={setTaskFilter} />
-            <span className="count">{filteredTodos.length}</span>
-          </div>
-        </div>
-        {filteredTodos.length ? (
-          <div className="saved-tasks">
-            <TodoList
-              todos={filteredTodos}
-              onDelete={deleteSavedTodo}
-              deletingId={deletingId}
-              onStatusChange={updateSavedTodoStatus}
-              updatingId={updatingId}
-            />
-          </div>
-        ) : (
-          <EmptyState filtered={todos.length > 0} />
-        )}
-      </section>
     </AppShell>
   );
 }
