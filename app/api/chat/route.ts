@@ -1,14 +1,21 @@
 import { openai } from "@/lib/ai/openai";
 import {
+  createTodoTool,
+  deleteTodoTool,
   getAllTodosTool,
   getTodosByDueDateRangeTool,
   getTodosByStatusTool,
+  updateTodoTool,
 } from "@/lib/ai/tools";
 import {
+  createTodo,
+  deleteTodo,
   getAllTodos,
   getTodosByDueDateRange,
   getTodosByStatus,
+  updateTodo,
 } from "@/lib/services";
+import { isValidObjectId } from "mongoose";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -16,10 +23,17 @@ type ChatMessage = {
 };
 
 const tools = [
+  createTodoTool,
+  updateTodoTool,
+  deleteTodoTool,
   getAllTodosTool,
   getTodosByStatusTool,
   getTodosByDueDateRangeTool,
 ];
+
+const todoStatuses = ["in_progress", "blocked", "completed"] as const;
+type TodoStatus = (typeof todoStatuses)[number];
+type RetrievedTodo = { _id?: unknown; title?: unknown };
 
 function parseCalendarDate(value: unknown, endOfDay = false) {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -32,12 +46,119 @@ function parseCalendarDate(value: unknown, endOfDay = false) {
   return date;
 }
 
-async function runTool(name: string, argumentsJson: string) {
+function requireRetrievedTodo(
+  id: unknown,
+  retrievedTodos: Map<string, string>,
+) {
+  if (typeof id !== "string" || !isValidObjectId(id)) {
+    throw new Error("Invalid todo ID");
+  }
+  const title = retrievedTodos.get(id);
+  if (!title) {
+    throw new Error("Retrieve the specific task before modifying it");
+  }
+  return { id, title };
+}
+
+function optionalText(value: unknown, field: string) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${field} must be a non-empty string`);
+  }
+  return value.trim();
+}
+
+async function runTool(
+  name: string,
+  argumentsJson: string,
+  retrievedTodos: Map<string, string>,
+  messages: ChatMessage[],
+) {
   const args = JSON.parse(argumentsJson) as Record<string, unknown>;
 
   switch (name) {
-    case "getAllTodos":
-      return getAllTodos();
+    case "createTodo": {
+      const title = optionalText(args.title, "Title");
+      if (!title) throw new Error("Title is required");
+      const dueDate =
+        args.dueDate === undefined
+          ? undefined
+          : parseCalendarDate(args.dueDate);
+      const todo = await createTodo({
+        title,
+        description: optionalText(args.description, "Description"),
+        assignee: optionalText(args.assignee, "Assignee"),
+        dueDate,
+      });
+      return { action: "created", todo };
+    }
+    case "updateTodo": {
+      const { id } = requireRetrievedTodo(args.id, retrievedTodos);
+      const status = args.status;
+      if (
+        status !== undefined &&
+        !todoStatuses.includes(status as TodoStatus)
+      ) {
+        throw new Error("Invalid task status");
+      }
+      const dueDate =
+        args.dueDate === undefined
+          ? undefined
+          : parseCalendarDate(args.dueDate);
+      const input = {
+        title: optionalText(args.title, "Title"),
+        description: optionalText(args.description, "Description"),
+        assignee: optionalText(args.assignee, "Assignee"),
+        dueDate,
+        status: status as TodoStatus | undefined,
+      };
+      if (Object.values(input).every((value) => value === undefined)) {
+        throw new Error("Provide at least one task field to update");
+      }
+      const todo = await updateTodo(id, input);
+      if (!todo) throw new Error("Todo not found");
+      return { action: "updated", todo };
+    }
+    case "deleteTodo": {
+      const { id, title } = requireRetrievedTodo(args.id, retrievedTodos);
+      if (args.confirmed !== true) {
+        throw new Error(
+          "Explicit user confirmation is required before deletion",
+        );
+      }
+      const latestMessage = messages.at(-1);
+      const previousAssistantMessage = [...messages]
+        .reverse()
+        .find((message) => message.role === "assistant");
+      const userConfirmed =
+        latestMessage?.role === "user" &&
+        /\b(yes|confirm|confirmed|proceed|delete it|remove it)\b/i.test(
+          latestMessage.content,
+        );
+      const assistantAskedForConfirmation =
+        previousAssistantMessage &&
+        /\bconfirm(?:ation)?\b/i.test(previousAssistantMessage.content) &&
+        previousAssistantMessage.content
+          .toLowerCase()
+          .includes(title.toLowerCase());
+      if (!userConfirmed || !assistantAskedForConfirmation) {
+        throw new Error(
+          "Deletion requires a prior named confirmation question and a later explicit user confirmation",
+        );
+      }
+      const todo = await deleteTodo(id);
+      if (!todo) throw new Error("Todo not found");
+      return { action: "deleted", todo };
+    }
+    case "getAllTodos": {
+      const todos = await getAllTodos();
+      todos.forEach((todo: RetrievedTodo) => {
+        if (todo._id && typeof todo.title === "string") {
+          retrievedTodos.set(String(todo._id), todo.title);
+        }
+      });
+      return todos;
+    }
     case "getTodosByStatus":
       if (
         args.status !== "in_progress" &&
@@ -46,13 +167,27 @@ async function runTool(name: string, argumentsJson: string) {
       ) {
         throw new Error("Invalid task status");
       }
-      return getTodosByStatus(args.status);
+      {
+        const todos = await getTodosByStatus(args.status);
+        todos.forEach((todo: RetrievedTodo) => {
+          if (todo._id && typeof todo.title === "string") {
+            retrievedTodos.set(String(todo._id), todo.title);
+          }
+        });
+        return todos;
+      }
     case "getTodosByDueDateRange": {
       const startDate = parseCalendarDate(args.startDate);
       const endDate = parseCalendarDate(args.endDate, true);
       if (startDate > endDate)
         throw new Error("Start date must precede end date");
-      return getTodosByDueDateRange(startDate, endDate);
+      const todos = await getTodosByDueDateRange(startDate, endDate);
+      todos.forEach((todo: RetrievedTodo) => {
+        if (todo._id && typeof todo.title === "string") {
+          retrievedTodos.set(String(todo._id), todo.title);
+        }
+      });
+      return todos;
     }
     default:
       throw new Error("Unsupported tool");
@@ -84,9 +219,12 @@ export async function POST(request: Request) {
         {
           role: "system",
           content:
-            `You are the read-only task assistant for do. Today is ${new Date().toISOString().slice(0, 10)}. ` +
+            `You are the task assistant for do. Today is ${new Date().toISOString().slice(0, 10)}. ` +
             "Use the task tools whenever an answer depends on saved task data. " +
-            "You can inspect tasks but must never claim to create, update, delete, or change them. " +
+            "Create or update a task only when the user explicitly asks you to do so; never infer a modification from a question or suggestion. " +
+            "Before updating, retrieve the task data and use the exact _id of the identified task. " +
+            "For deletion, first retrieve the task, clearly name it, and ask for confirmation. Only call deleteTodo after a later user message explicitly confirms deleting that named task. " +
+            "Never say a task operation succeeded unless its tool result reports success; explain tool errors or missing tasks plainly. " +
             "Use prior conversation context, identify priorities and risks, and ask a concise clarifying question when the request is ambiguous. " +
             "Offer a useful next step when appropriate. " +
             "Do not invent task facts, dates, or URLs. " +
@@ -100,6 +238,8 @@ export async function POST(request: Request) {
       tools,
     });
 
+    const retrievedTodos = new Map<string, string>();
+
     while (true) {
       const calls = response.output.filter(
         (item) => item.type === "function_call",
@@ -109,7 +249,12 @@ export async function POST(request: Request) {
       const outputs = await Promise.all(
         calls.map(async (call) => {
           try {
-            const result = await runTool(call.name, call.arguments);
+            const result = await runTool(
+              call.name,
+              call.arguments,
+              retrievedTodos,
+              messages,
+            );
             return {
               type: "function_call_output" as const,
               call_id: call.call_id,
