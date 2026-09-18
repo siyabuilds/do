@@ -245,40 +245,91 @@ export function TodoList({
   onStatusChange?: (id: string, status: Status) => void;
   updatingId?: string;
 }) {
+  const groups = groupTodosByDueDate(todos);
+
   return (
-    <div className="todo-list">
-      {todos.map((todo) => {
-        const id = todo._id;
-        return (
-          <TodoItem
-            key={id}
-            todo={todo}
-            disabled={updatingId === todo._id}
-            onSelectedChange={undefined}
-            onStatusChange={
-              onStatusChange
-                ? (status) => onStatusChange(todo._id, status)
-                : undefined
-            }
-            action={
-              onDelete ? (
-                <IconButton
-                  className="todo-delete"
-                  type="button"
-                  aria-label={`Delete ${todo.title}`}
-                  title="Delete task"
-                  disabled={deletingId === todo._id}
-                  onClick={() => onDelete(todo._id)}
-                >
-                  <Trash2 size={15} />
-                </IconButton>
-              ) : undefined
-            }
-          />
-        );
-      })}
+    <div className="todo-list todo-list--grouped">
+      {groups.map(({ label, todos: groupedTodos }) => (
+        <section className="todo-list__group" key={label}>
+          <h3 className="todo-list__group-title">{label}</h3>
+          {groupedTodos.map((todo) => {
+            const id = todo._id;
+            return (
+              <TodoItem
+                key={id}
+                todo={todo}
+                disabled={updatingId === todo._id}
+                onSelectedChange={undefined}
+                onStatusChange={
+                  onStatusChange
+                    ? (status) => onStatusChange(todo._id, status)
+                    : undefined
+                }
+                action={
+                  onDelete ? (
+                    <IconButton
+                      className="todo-delete"
+                      type="button"
+                      aria-label={`Delete ${todo.title}`}
+                      title="Delete task"
+                      disabled={deletingId === todo._id}
+                      onClick={() => onDelete(todo._id)}
+                    >
+                      <Trash2 size={15} />
+                    </IconButton>
+                  ) : undefined
+                }
+              />
+            );
+          })}
+        </section>
+      ))}
     </div>
   );
+}
+
+const dueDateGroups = ["Today", "Tomorrow", "This week", "No date"] as const;
+type DueDateGroup = (typeof dueDateGroups)[number];
+
+function groupTodosByDueDate(todos: SavedTodo[]) {
+  const groups = new Map<DueDateGroup, SavedTodo[]>(
+    dueDateGroups.map((label) => [label, []]),
+  );
+
+  todos.forEach((todo) => {
+    groups.get(getDueDateGroup(todo.dueDate))?.push(todo);
+  });
+
+  return dueDateGroups
+    .map((label) => ({
+      label,
+      todos: groups
+        .get(label)!
+        .toSorted(
+          (first, second) =>
+            Number(first.status === "completed") -
+            Number(second.status === "completed"),
+        ),
+    }))
+    .filter((group) => group.todos.length > 0);
+}
+
+function getDueDateGroup(dueDate?: string | Date): DueDateGroup {
+  if (!dueDate) return "No date";
+
+  const date = new Date(dueDate);
+  if (Number.isNaN(date.valueOf())) return "No date";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const taskDate = new Date(date);
+  taskDate.setHours(0, 0, 0, 0);
+
+  if (taskDate.valueOf() === today.valueOf()) return "Today";
+  if (taskDate.valueOf() === tomorrow.valueOf()) return "Tomorrow";
+  return "This week";
 }
 
 export function TaskStatusFilter({
