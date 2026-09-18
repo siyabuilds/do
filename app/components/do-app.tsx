@@ -630,6 +630,23 @@ function sanitizeAssistantHtml(content: string) {
   });
 }
 
+function AssistantActivity() {
+  return (
+    <article
+      className="chat-message chat-message--assistant chat-activity"
+      role="status"
+      aria-label="Assistant is checking your tasks"
+    >
+      <span className="chat-message__label">do</span>
+      <span className="chat-activity__dots" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </span>
+    </article>
+  );
+}
+
 export function TaskChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -726,12 +743,7 @@ export function TaskChat() {
             </article>
           ))
         )}
-        {sending && (
-          <article className="chat-message chat-message--assistant">
-            <span className="chat-message__label">do</span>
-            <p>Checking your tasks...</p>
-          </article>
-        )}
+        {sending && <AssistantActivity />}
       </section>
       {error && (
         <p className="error-message" role="alert">
