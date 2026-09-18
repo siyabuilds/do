@@ -243,6 +243,30 @@ h2 {
 .todo-list {
   border-top: 1px solid var(--border);
 }
+.todo-list--grouped {
+  border-top: 0;
+}
+.todo-list__group + .todo-list__group {
+  margin-top: var(--space-4);
+}
+.todo-list__group-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--slate);
+  font-family: var(--font-label), sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.todo-list__group-title::after {
+  height: 1px;
+  flex: 1;
+  background: var(--border);
+  content: "";
+}
 .saved-tasks {
   max-height: min(42vh, 420px);
   overflow-y: auto;
